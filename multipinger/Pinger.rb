@@ -57,6 +57,9 @@ class Pinger
   end
 
   def pingNodeFromLocal()
+    # run ping command from the local machine
+    # uses Open3 to get stdout and the exit status code
+    # any exit status code apart from 0 indicate that the ping was not successful
     lastFailed = true
     time = Time.new
     outFile = File.open(time.strftime("%Y-%m-%d_%H-%M-%S_")+@jobId.to_s+".log", "w")
@@ -68,16 +71,14 @@ class Pinger
       cmdOutput = stdout
       tmpTimestamp = DateTime.now.strftime('%Q').to_i
 
-
-      # get result from ping, it will be the second line of STDOUT
-      pingResult = cmdOutput.split("\n")[1]
+      pingResult = cmdOutput.split("\n")[1] # get result from ping, it will be the second line of STDOUT
       # pp pingResult
 
       timeNow = Time.now.strftime("%Y-%m-%d_%H-%M-%S")
       @lastPing = -1.0  # this will be overwritten if the ping succeeded
 
 
-      if pingResult == nil || pingResult == "" || pingResult.index("unreachable") != nil
+      if status.exitstatus > 0
         # ping failed
         lastFailed = true
         @countFailure += 1
@@ -90,7 +91,7 @@ class Pinger
         @successString << "!"
         outFile.write(timeNow+" "+pingResult + "\n")
 
-        # measure stats
+        # calculate stats
         @lastPing = getLatency(pingResult)
         @rollingTotalLatency += @lastPing
         @avgPing = @rollingTotalLatency / @countSuccess
@@ -106,60 +107,54 @@ class Pinger
     outFile.close
   end
 
-
   def pingNodeFromJumpServer()
+    # TODO: This should probably be re-written to use the exit code of the remote ping command
     lastFailed = true
     time = Time.new
     outFile = File.open(time.strftime("%Y-%m-%d_%H-%M-%S_")+@jobId.to_s+".log", "w")
 
     Net::SSH.start(@jumpHost, @jumpUser, :forward_agent => true) do |ssh|
       loop do
-        cmdOutput = ""
-        ssh.exec!(@basePingCmd) do |channel, stream, data|
-          @totalCount += 1
-          cmdOutput << data if stream == :stdout
+        cmdOutput = ssh.exec!(@basePingCmd)
+        @totalCount += 1
 
-          pingResult = cmdOutput.split("\n")[1]
-          # pp pingResult
+        pingResult = cmdOutput.split("\n")[1] # get result from ping, it will be the second line of STDOUT
 
-          timeNow = Time.now.strftime("%Y-%m-%d_%H-%M-%S")
-          @lastPing = -1.0  # this will be overwritten if the ping succeeded
+        timeNow = Time.now.strftime("%Y-%m-%d_%H-%M-%S")
+        @lastPing = -1.0  # this will be overwritten if the ping succeeded
 
-          if pingResult == nil || pingResult == "" || pingResult.index("unreachable") != nil
-            # ping failed
-            lastFailed = true
-            @countFailure += 1
-            @successString << "."
-            outFile.write("#{timeNow} -----" + "\n")
+        if pingResult == nil || pingResult == "" || pingResult =~ /unreachable/i
+          # ping failed
+          lastFailed = true
+          @countFailure += 1
+          @successString << "."
+          outFile.write("#{timeNow} -----" + "\n")
 
-          else
-            # ping succeeded
-            lastFailed = false
-            @countSuccess += 1
-            @successString << "!"
-            outFile.write(timeNow+" "+pingResult + "\n")
+        else
+          # ping succeeded
+          lastFailed = false
+          @countSuccess += 1
+          @successString << "!"
+          outFile.write(timeNow+" "+pingResult + "\n")
 
-            # measure stats
-            @lastPing = getLatency(pingResult)
-            @rollingTotalLatency += @lastPing
-            @avgPing = @rollingTotalLatency / @countSuccess
-            if @lastPing < @minPing; @minPing = @lastPing; end
-            if @lastPing > @maxPing; @maxPing = @lastPing; end
-          end
-
-          @latencyHistory << @lastPing
-
-          sleep 1
-
+          # calculate stats
+          @lastPing = getLatency(pingResult)
+          @rollingTotalLatency += @lastPing
+          @avgPing = @rollingTotalLatency / @countSuccess
+          if @lastPing < @minPing; @minPing = @lastPing; end
+          if @lastPing > @maxPing; @maxPing = @lastPing; end
         end
+
+        @latencyHistory << @lastPing
+
+        sleep 1
+        # ssh.loop
       end
 
-      ssh.loop
     end
 
     outFile.close
   end
-
   def getLatency(str)
     # TODO: I would like for this to return a double, but it is not a big problem
     # returns a float comtaining the latency for the ping, in ms

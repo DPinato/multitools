@@ -45,6 +45,12 @@ def checkCliArgs(args)
     return false
   end
 
+  # if --jumphost was provided, we expect --jumpuser
+  if args.find_index("--jumphost") != nil && args.find_index("--jumpuser") == nil
+    puts "You need to provide --jumpuser when using --jumphost"
+    return false
+  end
+
 
   return true
 end
@@ -77,7 +83,6 @@ nodeList = readNodeList(nodeListFile) # read list of IPv6 nodes to ping
 pp nodeList
 
 testPinger = Pinger.new(nodeList[0], 0)
-pp testPinger.inspect
 
 
 
@@ -88,6 +93,7 @@ pingerThreads = (0...nodeList.size).map do |i|
   pingerObjs[i] = Pinger.new(nodeList[i], i, jumpHost, jumpUser)
 
   Thread.new(i) do |i|
+    # Thread.current.report_on_exception = false
     pingerObjs[i].pingNode()
   end
 end
