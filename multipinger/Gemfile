@@ -1,0 +1,4 @@
+gem 'net-ssh', '>=5.2.0'
+gem 'date', '>=2.0.0'
+gem 'ipaddress', '>=0.8.3'
+gem 'open3', '>=0.1.0'
